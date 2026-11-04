@@ -415,6 +415,7 @@ if (typeof module !== 'undefined') module.exports = Core;
   const choice = {};        // key -> {app, can}
   const dateOn = {};        // key -> 名簿・フリガナ順を作る日程か
   let current = null;
+  const dateOpen = {};      // 日程key -> その日の変更一覧を開いているか
   let filter = 'all';
 
   /* ---------- 共通 ---------- */
@@ -849,10 +850,16 @@ if (typeof module !== 'undefined') module.exports = Core;
   function resetResult() { current = null; $('result').hidden = true; $('outsec').hidden = true; }
   function updateRun() { $('run').disabled = !(files1.length && buf[2] && buf[3]); }
 
+  $('groups').addEventListener('toggle', (e) => { const d = e.target && e.target.closest && e.target.closest('details[data-gk]'); if (d) dateOpen[d.dataset.gk] = d.open; }, true);
+
   function renderResult() {
     const { results } = current;
     const multi = results.length > 1;
+    const li = (l) => `<li><span class="pill ${l.kind}">${KIND[l.kind] || l.kind}</span><span class="who">${l.date ? `<span class="gl">${esc(l.date)}</span>` : ''}${esc(l.name)}</span><span class="what">${esc(l.detail)}</span></li>`;
     $('groups').innerHTML = results.map(({ g, plan }) => {
+      const dayRows = plan.log, dayShown = dayRows.filter((l) => filter === 'all' || l.kind === filter);
+      const dayLog = !multi ? '' : `<details class="logbox" data-gk="${g.key}"${dateOpen[g.key] ? ' open' : ''}><summary>${esc(g.label)}の変更一覧(${dayRows.length}件)</summary><div class="inner"><ul class="log">` +
+        (dayShown.length ? dayShown.map((l) => li(Object.assign({}, l, { date: g.srcs.size > 1 ? (l.src || '') : '' }))).join('') : `<li class="empty">${dayRows.length ? 'この種類の変更はありません' : '変更はありません'}</li>`) + '</ul></div></details>';
       const c = plan.counts;
       const tiles = [['add', '追加', c.add], ['update', '更新', c.update], ['cancel', 'キャンセルへ', c.cancel], ['phone', '電話(残す)', c.phone], ['flag', '新規フラグ変更', c.flag], ['warn', '要確認', c.warn]];
       return `<div class="gblock">${multi ? `<h3>${esc(g.label)}</h3>` : ''}
@@ -860,14 +867,12 @@ if (typeof module !== 'undefined') module.exports = Core;
         <div><h3>時間帯ごとの人数${multi ? '' : ''}</h3></div>
         <div class="tablebox"><table><thead><tr><th>時間</th><th class="num">人数</th><th class="num">定員</th><th class="num">残り</th></tr></thead><tbody>` +
         plan.slotStats.map((s) => `<tr><td>${esc(s.label)}</td><td class="num">${s.count}</td><td class="num">${s.cap == null ? '-' : s.cap}</td><td class="num ${s.cap != null && s.left < 0 ? 'over' : ''}">${s.cap == null ? '-' : s.left}</td></tr>`).join('') +
-        `</tbody><tfoot><tr><td><b>合計</b></td><td class="num"><b>${plan.rows.length}</b></td><td></td><td></td></tr></tfoot></table></div></div>`;
+        `</tbody><tfoot><tr><td><b>合計</b></td><td class="num"><b>${plan.rows.length}</b></td><td></td><td></td></tr></tfoot></table></div>${dayLog}</div>`;
     }).join('');
     const all = results.flatMap((r) => r.plan.log);
     const kinds = ['all', ...Object.keys(KIND).filter((k) => all.some((l) => l.kind === k))];
     $('chips').innerHTML = kinds.map((k) => `<button class="chip" data-f="${k}" aria-pressed="${filter === k}">${k === 'all' ? 'すべて' : KIND[k]}</button>`).join('');
     $('logsum').textContent = `変更一覧(${all.length}件)`;
-    const items = all.filter((l) => filter === 'all' || l.kind === filter);
-    const li = (l) => `<li><span class="pill ${l.kind}">${KIND[l.kind] || l.kind}</span><span class="who">${l.date ? `<span class="gl">${esc(l.date)}</span>` : ''}${esc(l.name)}</span><span class="what">${esc(l.detail)}</span></li>`;
     const names = files1.map((f) => f.name);
     const sections = names.map((n) => ({ title: n, rows: all.filter((l) => l.src === n) }));
     const rest = all.filter((l) => !l.src || !names.includes(l.src));
