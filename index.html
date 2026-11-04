@@ -131,6 +131,14 @@
   .gblock { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
   .gblock + .gblock { border-top: 1px solid var(--line); padding-top: 16px; }
   .gl { font-size: 12px; color: var(--muted); margin-right: 8px; }
+  .flist { display: flex; flex-direction: column; gap: 8px; }
+  .frow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 210px) auto; gap: 6px 10px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .frow.bad { border-color: var(--cxl); }
+  .frow .fn { overflow-wrap: anywhere; font-weight: 700; }
+  .frow .ferr, .frow .fnote { grid-column: 1 / -1; font-size: 13px; }
+  .frow .ferr { color: var(--cxl); } .frow .fnote { color: var(--muted); }
+  .frow button { padding: 0 10px; line-height: 1.8; background: transparent; color: var(--cxl); border: 1px solid var(--line); border-radius: 6px; font-weight: 400; }
+  @media (max-width: 520px) { .frow { grid-template-columns: minmax(0, 1fr) auto; } .frow .fn { grid-column: 1 / -1; } }
 </style>
 <style>[hidden]{display:none!important}body{margin:0}</style>
 </head>
@@ -146,14 +154,11 @@
     <h2 id="s1"><span class="step-no">1</span>Excelを読み込む</h2>
     <div class="drop" id="drop" tabindex="0" role="button" aria-label="Excelファイルをまとめて選ぶ">
       <b>Excelをまとめてここへドラッグ</b>
-      <span>①申込者一覧(複数日程なら日程の数だけ)・②集計・③参加者一覧。クリックして複数選ぶこともできます。①②③はファイル名と中身から自動で判別します。</span>
+      <span>①申込者一覧(複数日程なら日程の数だけ)・②集計・③参加者一覧を、まとめてドラッグしてください。枠をクリックして選ぶこともできます。読み込むと、どのファイルが①②③かを下に表示します。違っていたら選び直せます。</span>
       <input type="file" id="fall" accept=".xlsx" multiple hidden>
     </div>
-    <div class="files">
-      <div class="file" id="box1"><label class="t" for="f1">① 申込者一覧(複数可)</label><input type="file" id="f1" accept=".xlsx" multiple><div class="boxlist" id="n1"><div class="fname">未選択</div></div></div>
-      <div class="file" id="box2"><label class="t" for="f2">② 集計</label><input type="file" id="f2" accept=".xlsx"><div class="fname" id="n2">未選択</div></div>
-      <div class="file" id="box3"><label class="t" for="f3">③ 参加者一覧</label><input type="file" id="f3" accept=".xlsx"><div class="fname" id="n3">未選択</div></div>
-    </div>
+    <div class="flist" id="filelist" hidden></div>
+    <div id="filestatus" role="status" hidden></div>
     <div id="mapbox" hidden>
       <h3>日程ごとの反映先</h3>
       <p class="hint">日程は①の開催日から判別しました。反映先が違う場合は選び直してください。「新しく作る」を選ぶと、その日程のシートを追加します。</p>
@@ -893,18 +898,65 @@ if (typeof module !== 'undefined') module.exports = Core;
     r.onerror = () => rej(new Error('「' + file.name + '」を読み込めませんでした。もう一度選んでください。'));
     r.readAsArrayBuffer(file);
   });
-  function renderBoxes() {
-    $('n1').innerHTML = files1.length
-      ? files1.map((f, i) => `<div class="fitem"><span>${esc(f.name)}</span><button type="button" data-rm="${i}" aria-label="${esc(f.name)}を外す">×</button></div>`).join('')
-      : '<div class="fname">未選択</div>';
-    $('box1').classList.toggle('ok', files1.length > 0);
-    [2, 3].forEach((i) => { $('n' + i).textContent = fname[i] || '未選択'; $('box' + i).classList.toggle('ok', !!buf[i]); });
-    updateRun();
+  /* ---- 読み込んだファイルの一覧(種類は自動判別。違えば選び直す) ---- */
+  let loaded = [], nextId = 1, fileNote = '';
+  const ROLES = [[1, '① 申込者一覧'], [2, '② 集計'], [3, '③ 参加者一覧'], [0, '使わない']];
+  const getWb = async (f) => f.wb || (f.wb = await load(f.buf));
+  async function refresh() {
+    for (const f of loaded) {
+      f.err = ''; f.cl = null;
+      try {
+        if (f.role === 1) { if (!f.apps) f.apps = readApps(await getWb(f), f.name); } else f.apps = null;
+        if (f.role === 2) {
+          const cl = classify(await getWb(f));
+          if (!cl.some((x) => x.role === 'app')) throw new Error('申込者シート(C列「氏名」の見出しとN列の時間表があるシート)が見つかりません。②集計のExcelではないかもしれません。');
+          f.cl = cl;
+        }
+        if (f.role === 3) readParticipants(await getWb(f));
+      } catch (e) { f.err = e && e.message ? e.message : '読み込めませんでした。'; if (f.role === 1) f.apps = null; }
+    }
+    files1 = loaded.filter((f) => f.role === 1 && !f.err);
+    buf[2] = buf[3] = null; fname[2] = fname[3] = ''; info2 = null;
+    const one = (k) => { const l = loaded.filter((f) => f.role === k); return l.length === 1 && !l[0].err ? l[0] : null; };
+    const f2 = one(2), f3 = one(3);
+    if (f2) { buf[2] = f2.buf; fname[2] = f2.name; info2 = f2.cl; }
+    if (f3) { buf[3] = f3.buf; fname[3] = f3.name; }
+    Object.keys(choice).forEach((k) => delete choice[k]);
+    recomputeGroups(); renderMap(); renderFiles(); resetResult(); updateRun();
   }
-  $('n1').addEventListener('click', (e) => {
+  function renderFiles() {
+    const box = $('filelist');
+    box.hidden = !loaded.length;
+    box.innerHTML = loaded.map((f) => `<div class="frow${f.err ? ' bad' : ''}">
+      <span class="fn">${esc(f.name)}</span>
+      <select data-id="${f.id}" aria-label="${esc(f.name)}の種類">${ROLES.map(([k, l]) => `<option value="${k}"${f.role === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+      <button type="button" data-rm="${f.id}" aria-label="${esc(f.name)}を外す">×</button>
+      ${f.err ? `<div class="ferr">${esc(f.err)}</div>` : (f.role === 1 && f.apps ? `<div class="fnote">申込 ${f.apps.length}件</div>` : '')}
+    </div>`).join('');
+    const st = $('filestatus'), n = (k) => loaded.filter((f) => f.role === k).length, msgs = [];
+    if (fileNote) msgs.push(fileNote);
+    if (loaded.length) {
+      if (!n(1)) msgs.push('①申込者一覧が選ばれていません。');
+      ['', '', '②集計', '③参加者一覧'].forEach((l, k) => { if (k >= 2) { if (!n(k)) msgs.push(l + 'が選ばれていません。'); else if (n(k) > 1) msgs.push(l + 'が複数あります。1つにしてください。'); } });
+    }
+    const bad = loaded.some((f) => f.role && f.err);
+    if (msgs.length || bad) { st.hidden = false; st.className = 'msg wrn'; st.textContent = msgs.join(' ') || '種類が合っていないファイルがあります。右の選択で直してください。'; }
+    else if (loaded.length) { st.hidden = false; st.className = 'msg ok'; st.textContent = '①②③がそろいました。種類が合っているか確認して、反映に進んでください。'; }
+    else st.hidden = true;
+  }
+  $('filelist').addEventListener('change', (e) => {
+    const sel = e.target.closest('select[data-id]'); if (!sel) return;
+    const f = loaded.find((x) => String(x.id) === String(sel.dataset.id)); if (!f) return;
+    const k = Number(sel.value);
+    fileNote = '';
+    if (k === 2 || k === 3) loaded.forEach((o) => { if (o !== f && o.role === k) { o.role = 0; fileNote = '「' + o.name + '」は同じ種類が重なったため「使わない」にしました。'; } });
+    f.role = k;
+    refresh();
+  });
+  $('filelist').addEventListener('click', (e) => {
     const b = e.target.closest('[data-rm]'); if (!b) return;
-    files1.splice(Number(b.dataset.rm), 1);
-    recomputeGroups(); renderMap(); renderBoxes(); resetResult();
+    loaded = loaded.filter((x) => String(x.id) !== String(b.dataset.rm));
+    fileNote = ''; refresh();
   });
   const guessByName = (name) => {
     if (/①/.test(name)) return 1;
@@ -915,7 +967,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     if (/参加者/.test(name)) return 3;
     return 0;
   };
-  async function sniff(wb) {
+  function sniff(wb) {
     try {
       const ws = wb.worksheets[0];
       if (ws && headerMap(ws, (m) => m['氏名(漢字)(姓)'])) return 1;
@@ -924,50 +976,34 @@ if (typeof module !== 'undefined') module.exports = Core;
     } catch (e) { /* 判別できない */ }
     return 0;
   }
-  async function assignFiles(fileList, forced) {
-    showErr('');
+  async function addFiles(fileList) {
+    showErr(''); fileNote = '';
     const list = Array.from(fileList || []).filter(Boolean);
     if (!list.length) return;
-    const notes = [], seen = {};
+    const notes = [], unknown = [];
     for (const file of list) {
       try {
         if (!/\.xlsx$/i.test(file.name)) { notes.push('「' + file.name + '」はxlsx形式ではないため読み込めません。'); continue; }
         const b = await readBuf(file);
-        let wb = null;
-        let k = forced || guessByName(file.name);
-        if (!k) { wb = await load(b); k = await sniff(wb); }
-        if (!k) { notes.push('「' + file.name + '」が①②③のどれか判別できませんでした。下の各欄から個別に選んでください。'); continue; }
-        if (k === 1) {
-          wb = wb || await load(b);
-          const apps = readApps(wb, file.name);
-          files1 = files1.filter((f) => f.name !== file.name);
-          files1.push({ name: file.name, buf: b, apps });
-        } else {
-          if (seen[k]) notes.push('①②③のうち' + '①②③'[k - 1] + 'が複数あります。「' + file.name + '」を使います。');
-          seen[k] = true;
-          buf[k] = b; fname[k] = file.name;
-          if (k === 2) { wb = wb || await load(b); info2 = classify(wb); groups.forEach((g) => { choice[g.key] = autoChoice(g); }); }
-        }
+        const f = { id: nextId++, name: file.name, buf: b, role: 0, wb: null, apps: null, err: '', cl: null };
+        try { f.wb = await load(b); f.role = sniff(f.wb) || guessByName(file.name); } catch (e) { f.role = guessByName(file.name); f.err = e && e.message ? e.message : ''; }
+        if (!f.role) unknown.push(file.name);
+        loaded = loaded.filter((x) => x.name !== file.name);
+        if (f.role === 2 || f.role === 3) loaded.forEach((o) => { if (o.role === f.role) { o.role = 0; fileNote = '「' + o.name + '」は同じ種類が重なったため「使わない」にしました。'; } });
+        loaded.push(f);
       } catch (e) { notes.push(e && e.message ? e.message : '「' + file.name + '」を読み込めませんでした。'); }
     }
-    recomputeGroups(); renderMap(); renderBoxes(); resetResult();
+    if (unknown.length) notes.push('「' + unknown.join('」「') + '」は①②③のどれか判別できませんでした。一覧の選択で種類を選んでください。');
+    await refresh();
     if (notes.length) showErr(notes.join(' '));
   }
-  $('f1').addEventListener('change', (e) => { assignFiles(e.target.files, 1); e.target.value = ''; });
-  [2, 3].forEach((i) => $('f' + i).addEventListener('change', (e) => { assignFiles(e.target.files, i); e.target.value = ''; }));
-  [1, 2, 3].forEach((i) => {
-    const box = $('box' + i);
-    box.addEventListener('dragover', (e) => { e.preventDefault(); box.classList.add('over'); });
-    box.addEventListener('dragleave', () => box.classList.remove('over'));
-    box.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); box.classList.remove('over'); const fl = e.dataTransfer && e.dataTransfer.files; assignFiles(fl, i === 1 ? 1 : (fl && fl.length === 1 ? i : 0)); });
-  });
   const drop = $('drop');
   drop.addEventListener('click', () => $('fall').click());
   drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fall').click(); } });
-  $('fall').addEventListener('change', (e) => { assignFiles(e.target.files); e.target.value = ''; });
+  $('fall').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); assignFiles(e.dataTransfer && e.dataTransfer.files); });
+  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer && e.dataTransfer.files); });
   ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => e.preventDefault()));
 
   $('run').addEventListener('click', async () => {
