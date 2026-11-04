@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>個別相談予約名簿作成ツール</title>
+<style>
+  /* 配置: 1カラムの作業台。左に番号付きの3工程、上から順に「読み込む→反映→出力」 */
+  :root {
+    --bg: #f4f5f1;
+    --surface: #ffffff;
+    --ink: #1c2a28;
+    --muted: #5d6b68;
+    --line: #d5dbd6;
+    --accent: #0e6a5a;
+    --accent-ink: #ffffff;
+    --accent-soft: #dcefe9;
+    --add: #0e6a5a;
+    --upd: #2b5d8f;
+    --cxl: #a3262e;
+    --tel: #7a5a12;
+    --flg: #5b4b9a;
+    --wrn: #b4541a;
+    --wrn-bg: #fbeadd;
+    --err-bg: #f9e0e1;
+    --f-body: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    --f-head: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141b1a; --surface: #1d2725; --ink: #e5ece9; --muted: #9fb0ab; --line: #34433f;
+      --accent: #4fc3a9; --accent-ink: #0b1a17; --accent-soft: #1f3a34;
+      --add: #5fd0b6; --upd: #86b4e6; --cxl: #f08a90; --tel: #e2c26a; --flg: #b7a8f0; --wrn: #f0a46c;
+      --wrn-bg: #3a2a1e; --err-bg: #3d2224; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141b1a; --surface: #1d2725; --ink: #e5ece9; --muted: #9fb0ab; --line: #34433f;
+    --accent: #4fc3a9; --accent-ink: #0b1a17; --accent-soft: #1f3a34;
+    --add: #5fd0b6; --upd: #86b4e6; --cxl: #f08a90; --tel: #e2c26a; --flg: #b7a8f0; --wrn: #f0a46c;
+    --wrn-bg: #3a2a1e; --err-bg: #3d2224; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.65;
+    padding-block: 20px 56px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  h1 { font-family: var(--f-head); font-size: 26px; line-height: 1.3; margin: 0; text-wrap: balance; }
+  .lead { margin: 4px 0 0; color: var(--muted); }
+  h2 { font-size: 16px; margin: 0; display: flex; align-items: center; gap: 10px; }
+  .step-no { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+  section.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0; }
+  .files { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .file { border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .file.ok { border-style: solid; border-color: var(--accent); background: var(--accent-soft); }
+  .file label.t { font-weight: 700; }
+  .file .fname { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; min-height: 20px; }
+  .file input[type=file] { width: 100%; font: inherit; font-size: 13px; color: var(--ink); }
+  .drop { border: 2px dashed var(--accent); border-radius: 10px; padding: 22px 16px; text-align: center; cursor: pointer; background: var(--accent-soft); display: flex; flex-direction: column; gap: 4px; }
+  .drop b { font-size: 16px; }
+  .drop span { color: var(--muted); font-size: 13px; }
+  .drop.over, .file.over { background: var(--accent); color: var(--accent-ink); border-style: solid; }
+  .drop.over span { color: var(--accent-ink); }
+  details.logbox { border: 1px solid var(--line); border-radius: 8px; }
+  details.logbox > summary { cursor: pointer; padding: 11px 14px; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  details.logbox > summary::-webkit-details-marker { display: none; }
+  details.logbox > summary::after { content: "開く ▾"; color: var(--accent); font-size: 13px; }
+  details.logbox[open] > summary::after { content: "閉じる ▴"; }
+  details.logbox > .inner { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field label { font-size: 13px; color: var(--muted); }
+  input[type=text], input[type=date] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); min-width: 0; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; padding: 10px 18px; border: 1px solid var(--accent); font-weight: 700; }
+  button.primary { background: var(--accent); color: var(--accent-ink); }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  :focus-visible { outline: 3px solid var(--upd); outline-offset: 2px; }
+  .checks { display: flex; flex-direction: column; gap: 8px; }
+  .check { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .check input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex: none; }
+  .check b { display: block; }
+  .check span { color: var(--muted); font-size: 13px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 10px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .stat .n { font-size: 26px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+  .stat[data-k=add] .n { color: var(--add); } .stat[data-k=update] .n { color: var(--upd); }
+  .stat[data-k=cancel] .n { color: var(--cxl); } .stat[data-k=phone] .n { color: var(--tel); }
+  .stat[data-k=flag] .n { color: var(--flg); } .stat[data-k=warn] .n { color: var(--wrn); }
+  .tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { background: var(--bg); font-size: 12px; color: var(--muted); font-weight: 700; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; }
+  td.over { color: var(--cxl); font-weight: 700; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 5px 12px; font-size: 13px; border-radius: 99px; background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 400; }
+  .chip[aria-pressed=true] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  ul.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; max-height: 420px; overflow-y: auto; }
+  ul.log li { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 4px 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  ul.log li:last-child { border-bottom: 0; }
+  .pill { font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 4px; text-align: center; align-self: start; color: #fff; }
+  .pill.add { background: var(--add); } .pill.update { background: var(--upd); } .pill.cancel { background: var(--cxl); }
+  .pill.phone { background: var(--tel); } .pill.flag { background: var(--flg); } .pill.warn { background: var(--wrn); } .pill.info { background: var(--muted); }
+  :root[data-theme="dark"] .pill { color: #10201c; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill { color: #10201c; } }
+  .who { font-weight: 700; overflow-wrap: anywhere; }
+  .what { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; grid-column: 2; }
+  .msg { padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+  .msg.err { background: var(--err-bg); color: var(--cxl); font-weight: 700; }
+  .msg.ok { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  .msg.wrn { background: var(--wrn-bg); color: var(--wrn); }
+  .empty { color: var(--muted); padding: 14px; text-align: center; }
+  h3 { margin: 0; font-size: 14px; }
+  @media (max-width: 520px) { h1 { font-size: 22px; } ul.log li { grid-template-columns: 64px minmax(0, 1fr); } }
+  .boxlist { display: flex; flex-direction: column; gap: 4px; }
+  .fitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  .fitem button { padding: 0 8px; line-height: 1.6; font-size: 14px; background: transparent; color: var(--cxl); border: 1px solid var(--line); border-radius: 6px; font-weight: 400; }
+  .mapcard { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .mapcard .mapt { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .mapcard .mapt span { color: var(--muted); font-size: 13px; }
+  .mapsel { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  select { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); min-width: 0; width: 100%; }
+  .gblock { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+  .gblock + .gblock { border-top: 1px solid var(--line); padding-top: 16px; }
+  .gl { font-size: 12px; color: var(--muted); margin-right: 8px; }
+</style>
+<style>[hidden]{display:none!important}body{margin:0}</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>個別相談予約名簿作成ツール</h1>
+    <p class="lead">①申込者一覧(日程の数だけ)の内容を②集計に反映し、キャンセル整理・新規判定・名簿シート作成までをまとめて行います。ファイルはこの画面の中だけで処理され、外部には送信されません。</p>
+  </header>
+
+  <section class="card" aria-labelledby="s1">
+    <h2 id="s1"><span class="step-no">1</span>Excelを読み込む</h2>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Excelファイルをまとめて選ぶ">
+      <b>Excelをまとめてここへドラッグ</b>
+      <span>①申込者一覧(複数日程なら日程の数だけ)・②集計・③参加者一覧。クリックして複数選ぶこともできます。①②③はファイル名と中身から自動で判別します。</span>
+      <input type="file" id="fall" accept=".xlsx" multiple hidden>
+    </div>
+    <div class="files">
+      <div class="file" id="box1"><label class="t" for="f1">① 申込者一覧(複数可)</label><input type="file" id="f1" accept=".xlsx" multiple><div class="boxlist" id="n1"><div class="fname">未選択</div></div></div>
+      <div class="file" id="box2"><label class="t" for="f2">② 集計</label><input type="file" id="f2" accept=".xlsx"><div class="fname" id="n2">未選択</div></div>
+      <div class="file" id="box3"><label class="t" for="f3">③ 参加者一覧</label><input type="file" id="f3" accept=".xlsx"><div class="fname" id="n3">未選択</div></div>
+    </div>
+    <div id="mapbox" hidden>
+      <h3>日程ごとの反映先</h3>
+      <p class="hint">日程は①の開催日から判別しました。反映先が違う場合は選び直してください。「新しく作る」を選ぶと、その日程のシートを追加します。</p>
+      <div id="maplist" style="display:flex;flex-direction:column;gap:10px;margin-top:8px"></div>
+    </div>
+    <div class="row"><button class="primary" id="run" disabled>反映して変更内容を確認する</button></div>
+    <div id="err" role="alert" hidden></div>
+  </section>
+
+  <section class="card" id="result" aria-labelledby="s2" hidden>
+    <h2 id="s2"><span class="step-no">2</span>変更の状況</h2>
+    <div id="groups"></div>
+    <details class="logbox" id="logbox">
+      <summary id="logsum">変更一覧</summary>
+      <div class="inner">
+        <div class="chips" id="chips" role="group" aria-label="変更の種類で絞り込み"></div>
+        <ul class="log" id="log"></ul>
+      </div>
+    </details>
+  </section>
+
+  <section class="card" id="outsec" aria-labelledby="s3" hidden>
+    <h2 id="s3"><span class="step-no">3</span>完成Excelを出力する</h2>
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="cSort"><div><b>「予約時間・フリガナ順」シートを作る</b><span>申込者シートをコピーし、時間の早い順、同じ時間の中は50音順(濁点・半濁点を無視。同じ読みは清音→濁点→半濁点)に並べます。日程ごとに作ります。</span></div></label>
+      <label class="check"><input type="checkbox" id="cMeibo"><div><b>「名簿」シートを作る</b><span>並べ替えた内容を、名簿完成形と同じ表示形式で出力します。②に「名簿完成形」シートがなくても、同じ形で作ります。</span></div></label>
+    </div>
+    <div class="checks" id="datesel" hidden></div>
+    <div class="row">
+      <div class="field"><label for="asof">「現在」の日付</label><input type="date" id="asof"></div>
+    </div>
+    <div id="preview" hidden></div>
+    <div class="row"><button class="primary" id="dl">完成Excelを保存する</button></div>
+    <div id="dlmsg" role="status" hidden></div>
+  </section>
+</div>
+
+<script src="exceljs.min.js"></script>
+<script>
+/* 同じフォルダの exceljs.min.js が読めなければ、ネットがあるときだけCDNから読む */
+if (typeof ExcelJS === 'undefined') {
+  var _s = document.createElement('script');
+  _s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+  document.head.appendChild(_s);
+}
+</script>
+<script>
+/* 個別相談予約名簿 反映ロジック(Excel入出力に依存しない部分) */
+const Core = (() => {
+  const SP = '　';
+  const norm = (s) => String(s == null ? '' : s).normalize('NFKC').replace(/\s+/g, '');
+  const TIME_RE = /^\d{1,2}:\d{2}[~]\d{1,2}:\d{2}$/;
+  const canonTime = (s) => norm(s).replace(/〜/g, '~');
+  const isTime = (s) => TIME_RE.test(canonTime(s));
+  const fwTime = (s) => canonTime(s).replace(/:/g, '：').replace(/~/g, '～');
+  const timeStart = (s) => {
+    const m = /(\d{1,2}):(\d{2})/.exec(String(s == null ? '' : s).normalize('NFKC'));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : 99999;
+  };
+  const toGrade = (v) => {
+    if (v === '' || v == null) return '';
+    if (typeof v === 'number') return v;
+    const m = /(\d+)/.exec(String(v).normalize('NFKC'));
+    return m ? Number(m[1]) : String(v).trim();
+  };
+  const FIELDS = [
+    ['name', '氏名'], ['kana', 'フリガナ'], ['gender', '性別'], ['grade', '学年'],
+    ['time', '個別相談時間'], ['shimei', '指名'], ['jukuCode', '塾コード'],
+    ['juku', '塾'], ['school', '在籍中学校'], ['course', '希望コース'],
+  ];
+  const txt = (v) => (v == null ? '' : String(v)).trim();
+
+  /* ---- フリガナ順(濁点・半濁点を無視した50音順、同読みは 清音→濁点→半濁点) ---- */
+  const BASE = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン';
+  const SMALL = { ァ: 'ア', ィ: 'イ', ゥ: 'ウ', ェ: 'エ', ォ: 'オ', ッ: 'ツ', ャ: 'ヤ', ュ: 'ユ', ョ: 'ヨ', ヮ: 'ワ', ヵ: 'カ', ヶ: 'ケ', ヰ: 'イ', ヱ: 'エ' };
+  function kanaKey(s) {
+    let t = String(s == null ? '' : s).normalize('NFKC');
+    t = t.replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+    const pri = [], sec = [];
+    for (const ch of t.normalize('NFD')) {
+      if (ch === '゙') { if (sec.length) sec[sec.length - 1] += 1; continue; }
+      if (ch === '゚') { if (sec.length) sec[sec.length - 1] += 2; continue; }
+      if (/\s/.test(ch)) { pri.push(0); sec.push(0); continue; }
+      if (ch === 'ー') { pri.push(0.5); sec.push(0); continue; }
+      const small = SMALL[ch] !== undefined;
+      const base = small ? SMALL[ch] : ch;
+      const i = BASE.indexOf(base);
+      pri.push(i >= 0 ? i + 1 : 1000 + base.charCodeAt(0));
+      sec.push(small ? 0.5 : 0);
+    }
+    return { pri, sec };
+  }
+  const cmpArr = (a, b) => {
+    const n = Math.min(a.length, b.length);
+    for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] - b[i];
+    return a.length - b.length;
+  };
+  const noNum = (p) => (typeof p.no === 'number' ? p.no : 99999);
+  function sortRows(rows) {
+    const dec = rows.map((p) => ({ p, t: timeStart(p.time), k: kanaKey(p.kana || p.name) }));
+    dec.sort((x, y) =>
+      x.t - y.t || cmpArr(x.k.pri, y.k.pri) || cmpArr(x.k.sec, y.k.sec) || noNum(x.p) - noNum(y.p));
+    return dec.map((d) => d.p);
+  }
+
+  /* ---- 反映計画 ---- */
+  function makePlan({ apps, existing, participants, slots, cancelSheetKeys }) {
+    const log = [];
+    const add = (kind, name, detail) => log.push({ kind, name, detail: detail || '' });
+    const nameKey = (p) => norm(p.name);
+    const kanaGender = (p) => norm(p.kana) + '|' + norm(p.gender);
+
+    // ① を有効/キャンセルに分け、同一人物の重複は申込日時が新しい方を採用
+    const active = new Map();
+    const cancelledApps = new Map();
+    for (const a of apps) {
+      const k = nameKey(a);
+      if (!k) continue;
+      if (a.cancelled) { cancelledApps.set(k, a); continue; }
+      const prev = active.get(k);
+      if (prev) add('warn', a.name, '①に同じ氏名の申込が複数あります(新しい申込日時の方を採用)');
+      if (!prev || a.appliedAt >= prev.appliedAt) active.set(k, a);
+    }
+    const findApp = (p) => {
+      const k = nameKey(p);
+      if (k && active.has(k)) return active.get(k);
+      if (p.kana) {
+        const kg = kanaGender(p);
+        for (const a of active.values()) if (kanaGender(a) === kg) return a;
+      }
+      return null;
+    };
+
+    const maxNo = existing.reduce((m, p) => (typeof p.no === 'number' && p.no > m ? p.no : m), 0);
+    let nextNo = maxNo + 1;
+    const kept = [];
+    const moved = [];
+    const matched = new Set();
+
+    for (const ex of existing) {
+      const app = findApp(ex);
+      if (ex.isPhone) {
+        kept.push(ex);
+        if (app) {
+          matched.add(nameKey(app));
+          add('phone', ex.name, '電話受付の方がWeb申込にも載っています(電話の行をそのまま残し、Web側は追加しません)');
+        } else {
+          add('phone', ex.name, '電話受付のため、そのまま残しました');
+        }
+        continue;
+      }
+      if (!app) {
+        const why = cancelledApps.has(nameKey(ex)) ? '①でキャンセル済み' : '①に名前がありません';
+        moved.push(ex);
+        add('cancel', ex.name, `${why} → キャンセルシートへ移動`);
+        continue;
+      }
+      matched.add(nameKey(app));
+      const changes = [];
+      const upd = { ...ex };
+      for (const [f, label] of FIELDS) {
+        const nv = app[f];
+        if (nv === '' || nv == null) continue; // ①が空欄なら②の値を残す
+        if (txt(nv) !== txt(ex[f])) {
+          changes.push(`${label}: ${txt(ex[f]) || '(空)'} → ${txt(nv)}`);
+          upd[f] = nv;
+        }
+      }
+      if (changes.length) add('update', upd.name, changes.join(' / '));
+      kept.push(upd);
+    }
+
+    // ②にいない申込を、申込日時の順に追加
+    const fresh = [...active.values()]
+      .filter((a) => !matched.has(nameKey(a)))
+      .sort((a, b) => a.appliedAt - b.appliedAt || a.order - b.order);
+    for (const a of fresh) {
+      const row = { no: nextNo++, isNew: '', name: a.name, kana: a.kana, gender: a.gender, grade: a.grade,
+        time: a.time, shimei: a.shimei, jukuCode: a.jukuCode, juku: a.juku, school: a.school, course: a.course, isPhone: false };
+      kept.push(row);
+      add('add', a.name, `№${row.no} として追加` + (a.time ? `(${a.time})` : ''));
+      if (cancelSheetKeys && cancelSheetKeys.has(nameKey(a))) {
+        add('warn', a.name, 'キャンセルシートにも同じ氏名があります(再申込の可能性)');
+      }
+    }
+
+    // 新規フラグ(③参加者一覧に名前がなければ 1)
+    for (const p of kept) {
+      if (!norm(p.name)) continue;
+      const known = participants.names.has(nameKey(p)) ||
+        (p.kana && participants.kanaGender.has(kanaGender(p)));
+      const want = known ? '' : 1;
+      const had = p.isNew === 1 || p.isNew === '1' ? 1 : '';
+      if (want !== had) {
+        add('flag', p.name, want === 1 ? '新規欄を 1 にしました(③に名前なし)' : '新規欄の 1 を外しました(③に名前あり)');
+      }
+      p.isNew = want;
+    }
+
+    // 時間帯ごとの人数・定員チェック
+    const slotMap = new Map(slots.map((s) => [canonTime(s.label), s]));
+    const counts = new Map(slots.map((s) => [s.label, 0]));
+    for (const p of kept) {
+      if (!p.time) { if (norm(p.name)) add('warn', p.name, '個別相談時間が空欄です'); continue; }
+      const s = slotMap.get(canonTime(p.time));
+      if (s) { p.time = s.label; counts.set(s.label, counts.get(s.label) + 1); }
+      else { p.time = fwTime(p.time); add('warn', p.name, `時間帯「${p.time}」が②の時間表にありません`); }
+    }
+    const slotStats = slots.map((s) => ({ label: s.label, cap: s.cap, count: counts.get(s.label), left: s.cap - counts.get(s.label) }));
+    for (const s of slotStats) if (s.cap != null && s.left < 0) add('warn', s.label, `定員超過(${s.count}名 / 定員${s.cap}名)`);
+
+    const tally = (k) => log.filter((l) => l.kind === k).length;
+    return {
+      rows: kept, moved, log, slotStats, sorted: sortRows(kept),
+      counts: { add: tally('add'), update: tally('update'), cancel: tally('cancel'), phone: tally('phone'), flag: tally('flag'), warn: tally('warn'), total: kept.length, newFlag: kept.filter((p) => p.isNew === 1).length },
+    };
+  }
+
+  return { norm, isTime, canonTime, fwTime, timeStart, toGrade, kanaKey, sortRows, makePlan, FIELDS, SP };
+})();
+if (typeof module !== 'undefined') module.exports = Core;
+
+</script>
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const clone = (o) => JSON.parse(JSON.stringify(o || {}));
+  const SHEET_SORT = '予約時間・フリガナ順', SHEET_MEIBO = '名簿', SHEET_CAN = 'キャンセル', SHEET_APP = '申込者';
+  const NEW = '__new__';
+  const MEIBO_HEAD = ['№', '新規', '氏名', 'フリガナ', '個別番号', '指名', '性別', '学年', '個別相談時間', '塾コード', '塾', '在籍中学校', '希望コース'];
+  const MEIBO_WIDTHS = [3.1, 3.6, 12.1, 14.1, 11.5, 9.6, 3.6, 3.8, 14.5, 6.8, 14.6, 10.5, 24.0];
+  const MEIBO_FONT = '游ゴシック';
+  function meiboCellStyle(pos, c) {
+    const thin = { style: 'thin' }, med = { style: 'medium' };
+    const al = { vertical: 'middle', shrinkToFit: true };
+    if (c !== 0) al.horizontal = c === 12 ? 'left' : 'center';
+    return {
+      font: { name: MEIBO_FONT, size: c < 2 ? 10 : 11 }, alignment: al,
+      border: { left: c === 0 ? med : thin, right: c === 12 ? med : thin, top: pos === 'first' || pos === 'only' ? med : thin, bottom: pos === 'last' || pos === 'only' ? med : thin },
+    };
+  }
+
+  /* ---------- 状態 ---------- */
+  const buf = { 2: null, 3: null };
+  const fname = { 2: '', 3: '' };
+  let files1 = [];          // {name, buf, apps}
+  let info2 = null;         // ②のシート一覧(種類・日付)
+  let groups = [];          // 日程ごとのグループ
+  const choice = {};        // key -> {app, can}
+  const dateOn = {};        // key -> 名簿・フリガナ順を作る日程か
+  let current = null;
+  let filter = 'all';
+
+  /* ---------- 共通 ---------- */
+  const cv = (cell) => {
+    const v = cell.value;
+    if (v == null) return '';
+    if (typeof v === 'object' && !(v instanceof Date)) {
+      if (v.richText) return v.richText.map((t) => t.text).join('');
+      if (v.formula !== undefined || v.sharedFormula !== undefined) return v.result == null ? '' : v.result;
+      if (v.text !== undefined) return v.text;
+      if (v.error) return '';
+    }
+    return v;
+  };
+  const txt = (v) => (v == null ? '' : String(v)).trim();
+  const T = Core.norm;
+  const load = async (b) => { if (typeof ExcelJS === 'undefined') throw new Error('Excelを扱う部品(exceljs.min.js)を読み込めません。このHTMLと同じフォルダに exceljs.min.js を置くか、ネットにつないでから開き直してください。'); const wb = new ExcelJS.Workbook(); await wb.xlsx.load(b.slice(0)); return wb; };
+  const DOW = '日月火水木金土';
+  const dkKey = (dk) => (dk ? dk.y * 10000 + dk.m * 100 + dk.d : 0);
+  const dkLabel = (dk) => (dk ? `${dk.y}年${dk.m}月${dk.d}日(${DOW[new Date(Date.UTC(dk.y, dk.m - 1, dk.d)).getUTCDay()]})` : '日程不明');
+  const dkShort = (dk) => (dk ? `${dk.m}月${dk.d}日` : '日程不明');
+  const parseDk = (v) => {
+    if (v instanceof Date) return { y: v.getUTCFullYear(), m: v.getUTCMonth() + 1, d: v.getUTCDate() };
+    if (typeof v === 'number' && v > 30000 && v < 80000) {
+      const dt = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 864e5);
+      return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
+    }
+    const s = String(v == null ? '' : v).normalize('NFKC').trim();
+    let m = /(\d{4})\D+(\d{1,2})\D+(\d{1,2})/.exec(s);
+    if (!m) m = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
+    return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
+  };
+  const nameDate = (name) => {
+    const m = /(?<!\d)(\d{1,2})\s*[\/月.\-]\s*(\d{1,2})(?!\d)/.exec(String(name).normalize('NFKC'));
+    return m && +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31 ? { m: +m[1], d: +m[2], from: 'name' } : null;
+  };
+  const titleDate = (t) => {
+    const m = /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/.exec(String(t).normalize('NFKC'));
+    return m ? { y: +m[1], m: +m[2], d: +m[3], from: 'title' } : null;
+  };
+  const titleHasDate = (t, dk) => { const x = titleDate(t); return !!(x && dk && x.m === dk.m && x.d === dk.d); };
+  const sameMD = (a, dk) => !!(a && dk && a.m === dk.m && a.d === dk.d && (!a.y || a.y === dk.y));
+
+  /* ---------- Excel 読み取り ---------- */
+  const headerMap = (ws, test) => {
+    for (let r = 1; r <= Math.min(15, ws.rowCount); r++) {
+      const m = {};
+      ws.getRow(r).eachCell({ includeEmpty: false }, (cell, c) => { const t = T(cv(cell)); if (t && !(t in m)) m[t] = c; });
+      if (test(m)) return { hr: r, map: m };
+    }
+    return null;
+  };
+
+  function readApps(wb, srcName) {
+    const ws = wb.worksheets[0];
+    if (!ws) throw new Error('「' + srcName + '」にシートがありません。');
+    const h = headerMap(ws, (m) => m['氏名(漢字)(姓)']);
+    if (!h) throw new Error('「' + srcName + '」の見出し行(「氏名(漢字)（姓）」の列)が見つかりません。申込者一覧のExcelか確認してください。');
+    const { hr, map } = h;
+    let tcol = 0, best = 0;
+    for (let c = 1; c <= ws.columnCount; c++) {
+      let n = 0;
+      for (let r = hr + 1; r <= Math.min(ws.rowCount, hr + 200); r++) if (Core.isTime(cv(ws.getCell(r, c)))) n++;
+      if (n > best) { best = n; tcol = c; }
+    }
+    const hdrDate = tcol ? (() => { const m = /(\d{1,2})\/(\d{1,2})/.exec(String(cv(ws.getCell(hr, tcol))).normalize('NFKC')); return m ? { y: new Date().getFullYear(), m: +m[1], d: +m[2] } : null; })() : null;
+    const shimeiKey = Object.keys(map).find((k) => k.includes('指名'));
+    const g = (r, key) => (map[key] ? cv(ws.getCell(r, map[key])) : '');
+    const apps = [];
+    for (let r = hr + 1; r <= ws.rowCount; r++) {
+      const sei = txt(g(r, '氏名(漢字)(姓)')), mei = txt(g(r, '氏名(漢字)(名)'));
+      if (!sei && !mei) continue;
+      const ap = g(r, '申込完了日');
+      const cs = txt(g(r, 'キャンセル'));
+      apps.push({
+        name: sei + Core.SP + mei,
+        kana: txt(g(r, '氏名(カナ)(姓)')) + Core.SP + txt(g(r, '氏名(カナ)(名)')),
+        gender: txt(g(r, '性別')),
+        grade: Core.toGrade(g(r, '学年')),
+        time: tcol ? Core.fwTime(cv(ws.getCell(r, tcol))) : '',
+        shimei: shimeiKey ? txt(g(r, shimeiKey)) : '',
+        jukuCode: txt(g(r, '塾コード')),
+        juku: txt(g(r, '塾名称')) || txt(g(r, '塾名称その他')),
+        school: txt(g(r, '出身校名称')) || txt(g(r, '出身校名称その他')),
+        course: (() => { const v = g(r, '希望コース'); return v == null ? '' : String(v); })(),
+        cancelled: cs !== '' && !/^0/.test(T(cs)),
+        appliedAt: (() => { const v = ap; return v instanceof Date ? v.getTime() : Number(v) || 0; })(),
+        order: r, src: srcName,
+        dk: parseDk(g(r, '開催日(From)')) || hdrDate,
+      });
+    }
+    if (!apps.length) throw new Error('「' + srcName + '」に申込者の行が見つかりませんでした。');
+    return apps;
+  }
+
+  function readParticipants(wb) {
+    const ws = wb.worksheets[0];
+    if (!ws) throw new Error('③のExcelにシートがありません。');
+    const h = headerMap(ws, (m) => m['姓'] && m['名']);
+    if (!h) throw new Error('③の見出し行(「姓」「名」の列)が見つかりません。参加者一覧のExcelか確認してください。');
+    const { hr, map } = h;
+    const names = new Set(), kanaGender = new Set();
+    for (let r = hr + 1; r <= ws.rowCount; r++) {
+      const sei = txt(cv(ws.getCell(r, map['姓']))), mei = txt(cv(ws.getCell(r, map['名'])));
+      if (!sei && !mei) continue;
+      names.add(T(sei + mei));
+      if (map['セイ'] && map['メイ']) {
+        const k = T(txt(cv(ws.getCell(r, map['セイ']))) + txt(cv(ws.getCell(r, map['メイ']))));
+        kanaGender.add(k + '|' + T(map['性別'] ? cv(ws.getCell(r, map['性別'])) : ''));
+      }
+    }
+    return { names, kanaGender };
+  }
+
+  function findHeaderRow(ws) {
+    for (let r = 1; r <= Math.min(20, Math.max(ws.rowCount, 20)); r++) if (T(cv(ws.getCell(r, 3))) === '氏名') return r;
+    return 0;
+  }
+
+  // ②の各シートの種類(申込者/キャンセル/名簿完成形/出力済み)と日付を調べる
+  function classify(wb) {
+    return wb.worksheets.map((ws) => {
+      const nm = ws.name;
+      const hr = findHeaderRow(ws);
+      let role = 'other';
+      if (/キャンセル/.test(nm)) role = 'cancel';
+      else if (/フリガナ順|予約時間/.test(nm)) role = 'sorted';
+      else if (/名簿/.test(nm)) role = /完成形/.test(nm) ? 'tpl' : 'meibo';
+      else if (hr && (Core.isTime(cv(ws.getCell(hr + 1, 14))) || /申込/.test(nm))) role = 'app';
+      const td = role === 'tpl' ? titleDate(txt(cv(ws.getCell(1, 1)))) : (hr ? titleDate(txt(cv(ws.getCell(hr - 1, 1)))) : null);
+      return { name: nm, role, date: nameDate(nm) || td };
+    });
+  }
+
+  function readSheet2(wb, name) {
+    const ws = wb.getWorksheet(name);
+    if (!ws) throw new Error('②に「' + name + '」シートがありません。');
+    const hr = findHeaderRow(ws);
+    if (!hr) throw new Error('②の「' + name + '」シートで見出し行(C列「氏名」)が見つかりません。');
+    let sumRow = 0;
+    for (let r = hr + 1; r <= hr + 400; r++) {
+      const v = ws.getCell(r, 2).value;
+      if (v && typeof v === 'object' && /SUM/i.test(v.formula || v.sharedFormula || '')) { sumRow = r; break; }
+    }
+    if (!sumRow) sumRow = hr + 42;
+    const existing = [];
+    for (let r = hr + 1; r < sumRow; r++) {
+      const v = []; for (let c = 1; c <= 12; c++) v.push(cv(ws.getCell(r, c)));
+      const noRaw = v[0];
+      const isPhone = /電話/.test(T(noRaw));
+      const nm = txt(v[2]);
+      if (!nm && !isPhone) continue;
+      const nn = typeof noRaw === 'number' ? noRaw : (/^\d+$/.test(T(noRaw)) ? Number(T(noRaw)) : txt(noRaw));
+      existing.push({ no: isPhone ? '電話' : nn, isNew: Number(v[1]) === 1 ? 1 : '', name: v[2] === '' ? '' : String(v[2]), kana: v[3] === '' ? '' : String(v[3]),
+        gender: txt(v[4]), grade: v[5], time: txt(v[6]), shimei: txt(v[7]), jukuCode: txt(v[8]), juku: txt(v[9]), school: txt(v[10]), course: v[11] === '' ? '' : String(v[11]), isPhone });
+    }
+    const slots = [];
+    for (let r = hr + 1; r <= hr + 40; r++) {
+      const label = cv(ws.getCell(r, 14));
+      if (!Core.isTime(label)) break;
+      const cap = Number(cv(ws.getCell(r, 17)));
+      slots.push({ label: String(label), cap: Number.isFinite(cap) && cap > 0 ? cap : null });
+    }
+    if (!slots.length) throw new Error('②の「' + name + '」シートで時間表(N列)が見つかりません。');
+    return { hr, sumRow, existing, slots, title: txt(cv(ws.getCell(hr - 1, 1))) };
+  }
+
+  function readCancelKeys(wb, name) {
+    const keys = new Set();
+    const lc = name && name !== NEW ? wb.getWorksheet(name) : null;
+    if (lc) { const h = findHeaderRow(lc); if (h) for (let r = h + 1; r <= lc.rowCount; r++) { const k = T(cv(lc.getCell(r, 3))); if (k) keys.add(k); } }
+    return keys;
+  }
+
+  /* ---------- 日程と②シートの対応 ---------- */
+  function recomputeGroups() {
+    const map = new Map();
+    for (const f of files1) {
+      for (const a of f.apps) {
+        const k = dkKey(a.dk);
+        if (!map.has(k)) map.set(k, { key: k, dk: a.dk, label: dkLabel(a.dk), count: 0, srcs: new Set() });
+        const g = map.get(k);
+        if (!a.cancelled) g.count++;
+        g.srcs.add(a.src);
+      }
+    }
+    groups = [...map.values()].sort((a, b) => a.key - b.key);
+    for (const k of Object.keys(choice)) if (!map.has(Number(k))) delete choice[k];
+    for (const g of groups) if (!choice[g.key]) choice[g.key] = autoChoice(g);
+  }
+  function autoChoice(g) {
+    if (!info2) return { app: NEW, can: NEW };
+    const apps = info2.filter((s) => s.role === 'app'), cans = info2.filter((s) => s.role === 'cancel');
+    let a = apps.find((s) => sameMD(s.date, g.dk));
+    if (!a && groups.length === 1 && apps.length === 1) a = apps[0];
+    let c = cans.find((s) => s.date && s.date.from === 'name' && sameMD(s.date, g.dk));
+    if (!c && cans.length === 1 && !(cans[0].date && cans[0].date.from === 'name')) c = cans[0];
+    return { app: a ? a.name : NEW, can: c ? c.name : NEW };
+  }
+  function renderMap() {
+    const ready = files1.length && info2;
+    $('mapbox').hidden = !ready;
+    if (!ready) return;
+    const apps = info2.filter((s) => s.role === 'app'), cans = info2.filter((s) => s.role === 'cancel');
+    $('maplist').innerHTML = groups.map((g) => {
+      const ch = choice[g.key];
+      const opt = (list, sel, newLabel) => list.map((s) => `<option value="${esc(s.name)}"${sel === s.name ? ' selected' : ''}>${esc(s.name)}</option>`).join('') +
+        `<option value="${NEW}"${sel === NEW ? ' selected' : ''}>${esc(newLabel)}</option>`;
+      return `<div class="mapcard"><div class="mapt"><b>${esc(g.label)}</b><span>申込 ${g.count}件(${esc([...g.srcs].join('、'))})</span></div>
+        <div class="mapsel">
+          <div class="field"><label>反映する申込者シート</label><select data-k="${g.key}" data-w="app">${opt(apps, ch.app, '新しく作る: ' + SHEET_APP + '(' + dkShort(g.dk) + ')')}</select></div>
+          <div class="field"><label>キャンセルの移動先</label><select data-k="${g.key}" data-w="can">${opt(cans, ch.can, '新しく作る: ' + SHEET_CAN + '(' + dkShort(g.dk) + ')')}</select></div>
+        </div></div>`;
+    }).join('');
+  }
+  $('maplist').addEventListener('change', (e) => {
+    const s = e.target.closest('select'); if (!s) return;
+    choice[s.dataset.k][s.dataset.w] = s.value;
+    resetResult();
+  });
+
+  /* ---------- 計画づくり ---------- */
+  const uniqueName = (wb, base, used) => {
+    let n = base, i = 2;
+    while (wb.getWorksheet(n) || used.has(n)) n = `${base}${i++}`;
+    used.add(n); return n;
+  };
+
+  async function buildPlans() {
+    if (!(files1.length && buf[2] && buf[3])) throw new Error('①②③のExcelを読み込んでください。');
+    const [w2, w3] = await Promise.all([load(buf[2]), load(buf[3])]);
+    const p3 = readParticipants(w3);
+    const sheets = classify(w2);
+    const baseApp = sheets.find((s) => s.role === 'app');
+    if (!baseApp) throw new Error('②に申込者シートが見つかりません(C列が「氏名」の見出しと、N列の時間表があるシートが必要です)。');
+    const baseCan = sheets.find((s) => s.role === 'cancel');
+    const usedApp = new Map();
+    for (const g of groups) {
+      const a = choice[g.key].app;
+      if (a !== NEW) { if (usedApp.has(a)) throw new Error('「' + a + '」に複数の日程(' + usedApp.get(a) + ' と ' + g.label + ')が割り当てられています。反映先を選び直してください。'); usedApp.set(a, g.label); }
+    }
+    const used = new Set();
+    const multi = groups.length > 1;
+    const results = [];
+    for (const g of groups) {
+      const sel = choice[g.key];
+      const s2 = readSheet2(w2, sel.app === NEW ? baseApp.name : sel.app);
+      const existing = sel.app === NEW ? [] : s2.existing;
+      const cancelKeys = readCancelKeys(w2, sel.can);
+      const apps = files1.flatMap((f) => f.apps).filter((a) => dkKey(a.dk) === g.key);
+      const plan = Core.makePlan({ apps, existing, participants: p3, slots: s2.slots, cancelSheetKeys: cancelKeys });
+      if (multi) plan.log.forEach((l) => { l.date = g.label; });
+      const appName = sel.app === NEW ? uniqueName(w2, SHEET_APP + '(' + dkShort(g.dk) + ')', used) : sel.app;
+      const canName = sel.can === NEW ? uniqueName(w2, SHEET_CAN + '(' + dkShort(g.dk) + ')', used) : sel.can;
+      const dated = multi || !!nameDate(appName);
+      results.push({ g, sel, s2, plan, appName, canName, suffix: dated ? '(' + dkShort(g.dk) + ')' : '' });
+    }
+    return { results, w2, sheets, baseApp, baseCan };
+  }
+
+  /* ---------- Excel 書き込み ---------- */
+  const dupRule = (ref, first) => ({
+    ref,
+    rules: [{ type: 'expression', priority: 1,
+      formulae: [`AND(C${first}<>"",COUNTIF($C$${first}:$C$${ref.split(':')[1].replace(/\D/g, '')},C${first})>1)`],
+      style: { font: { color: { argb: 'FF9C0006' } }, fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFFFC7CE' } } } }],
+  });
+  const copyRowStyle = (ws, from, to, n) => {
+    for (let c = 1; c <= n; c++) ws.getCell(to, c).style = clone(ws.getCell(from, c).style);
+    const h = ws.getRow(from).height; if (h) ws.getRow(to).height = h;
+  };
+  const rowValues = (p) => [p.no, p.isNew === 1 ? 1 : null, p.name, p.kana, p.gender, p.grade, p.time, p.shimei, p.jukuCode, p.juku, p.school, p.course]
+    .map((v) => (v === '' || v === undefined ? null : v));
+  const putRow = (ws, r, p) => rowValues(p).forEach((v, i) => { ws.getCell(r, i + 1).value = v; });
+
+  function copySheet(wb, src, name) {
+    const old = wb.getWorksheet(name); if (old) wb.removeWorksheet(old.id);
+    const ws = wb.addWorksheet(name);
+    ws.pageSetup = Object.assign({}, src.pageSetup);
+    ws.views = clone(src.views);
+    for (let c = 1; c <= Math.max(src.columnCount, 1); c++) {
+      const sc = src.getColumn(c), dc = ws.getColumn(c);
+      if (sc.width) dc.width = sc.width;
+      if (sc.hidden) dc.hidden = true;
+    }
+    for (let r = 1; r <= src.rowCount; r++) {
+      const sr = src.getRow(r), dr = ws.getRow(r);
+      if (sr.height) dr.height = sr.height;
+      sr.eachCell({ includeEmpty: true }, (cell, c) => {
+        const d = dr.getCell(c);
+        const v = cell.value;
+        d.value = v && typeof v === 'object' && !(v instanceof Date) && v.formula !== undefined ? { formula: v.formula } : v;
+        d.style = clone(cell.style);
+      });
+    }
+    (src.model.merges || []).forEach((m) => ws.mergeCells(m));
+    return ws;
+  }
+
+  // 新しい日程のシートを、書き込み前の状態の②から先に作っておく
+  function prepareSheets(wb, ctx) {
+    for (const r of ctx.results) {
+      if (r.sel.app === NEW) copySheet(wb, wb.getWorksheet(ctx.baseApp.name), r.appName);
+      if (r.sel.can === NEW) {
+        const src = ctx.baseCan ? wb.getWorksheet(ctx.baseCan.name) : wb.getWorksheet(ctx.baseApp.name);
+        const wc = copySheet(wb, src, r.canName);
+        const h = findHeaderRow(wc) || 3;
+        const lastCol = ctx.baseCan ? 12 : 17;
+        for (let rr = h + 1; rr <= wc.rowCount; rr++) for (let c = 1; c <= lastCol; c++) wc.getCell(rr, c).value = null;
+      }
+    }
+  }
+
+  function writeGroup(wb, r, ctx, opts) {
+    const { plan, s2, g } = r;
+    const ws = wb.getWorksheet(r.appName);
+    const n = plan.rows.length;
+    const hr = s2.hr;
+    let sumRow = s2.sumRow;
+    const size = sumRow - 1 - hr;
+    if (n > size) {
+      const k = n - size;
+      ws.spliceRows(sumRow, 0, ...Array.from({ length: k }, () => []));
+      for (let i = 0; i < k; i++) copyRowStyle(ws, sumRow - 1, sumRow + i, 12);
+      sumRow += k;
+      ws.getCell(sumRow, 2).value = { formula: `SUM(B${hr + 1}:B${sumRow - 1})` };
+    }
+    const lastData = sumRow - 1;
+    const maxNo = plan.rows.reduce((m, p) => (typeof p.no === 'number' && p.no > m ? p.no : m), 0);
+    let blankNo = maxNo + 1;
+    for (let rr = hr + 1, i = 0; rr <= lastData; rr++, i++) {
+      if (plan.rows[i]) putRow(ws, rr, plan.rows[i]); else putRow(ws, rr, { no: blankNo++ });
+    }
+    ws.conditionalFormattings = [];
+    ws.addConditionalFormatting(dupRule(`C${hr + 1}:C${lastData}`, hr + 1));
+    const asof = opts.asof ? new Date(opts.asof + 'T00:00:00Z') : null;
+    if (asof) ws.getCell('L1').value = asof;
+    if (g.dk && !titleHasDate(txt(cv(ws.getCell(hr - 1, 1))), g.dk)) ws.getCell(hr - 1, 1).value = g.label;
+    const title = txt(cv(ws.getCell(hr - 1, 1))) || (g.dk ? g.label : '');
+
+    // キャンセルシート
+    const wc = wb.getWorksheet(r.canName);
+    if (wc) {
+      const h = findHeaderRow(wc) || 3;
+      if (plan.moved.length) {
+        let rr = h + 1;
+        while (T(cv(wc.getCell(rr, 3)))) rr++;
+        for (const p of plan.moved) {
+          const b = wc.getCell(rr, 1).border;
+          if (!b || !b.left) copyRowStyle(wc, h + 1, rr, 12);
+          putRow(wc, rr, p);
+          rr++;
+        }
+      }
+      wc.conditionalFormattings = [];
+      wc.addConditionalFormatting(dupRule(`C${h + 1}:C${Math.max(wc.rowCount, h + 40)}`, h + 1));
+      if (asof) wc.getCell('L1').value = asof;
+      const shared = ctx.results.filter((x) => x.canName === r.canName).length > 1;
+      if (g.dk && !shared && !titleHasDate(txt(cv(wc.getCell(h - 1, 1))), g.dk)) wc.getCell(h - 1, 1).value = g.label;
+    }
+
+    // 予約時間・フリガナ順
+    if (opts.sort) {
+      const wsS = copySheet(wb, ws, SHEET_SORT + r.suffix);
+      plan.sorted.forEach((p, i) => putRow(wsS, hr + 1 + i, p));
+      let b2 = maxNo + 1;
+      for (let rr = hr + 1 + plan.sorted.length; rr <= lastData; rr++) putRow(wsS, rr, { no: b2++ });
+      wsS.addConditionalFormatting(dupRule(`C${hr + 1}:C${lastData}`, hr + 1));
+    }
+
+    // 名簿(名簿完成形と同じ表示形式。名簿完成形シートがなければ同じ形を一から作る)
+    if (opts.meibo) {
+      const tplInfos = ctx.sheets.filter((s) => s.role === 'tpl');
+      const tplInfo = tplInfos.find((s) => sameMD(s.date, g.dk) || (s.date && s.date.from === 'name' && sameMD(s.date, g.dk))) || (tplInfos.length === 1 ? tplInfos[0] : tplInfos[0]);
+      const tpl = tplInfo ? wb.getWorksheet(tplInfo.name) : null;
+      const mname = SHEET_MEIBO + r.suffix;
+      const first = 3, rowsOut = plan.sorted;
+      let wm, st, tplLast, rowH;
+      if (tpl) {
+        wm = copySheet(wb, tpl, mname);
+        tplLast = Math.max(tpl.rowCount, 3);
+        const styleOf = (row) => { const a = []; for (let c = 1; c <= 13; c++) a.push(clone(tpl.getCell(row, c).style)); return a; };
+        st = { first: styleOf(3), mid: styleOf(Math.min(4, tplLast - 1) || 3), last: styleOf(tplLast >= 12 ? 12 : tplLast), none: styleOf(tplLast + 1) };
+        rowH = tpl.getRow(4).height || 19.15;
+      } else {
+        const old = wb.getWorksheet(mname); if (old) wb.removeWorksheet(old.id);
+        wm = wb.addWorksheet(mname);
+        tplLast = 2; rowH = 19.15;
+        wm.pageSetup = { orientation: 'portrait', paperSize: 8, margins: { left: 0.12, right: 0.12, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 } };
+        MEIBO_WIDTHS.forEach((w, i) => { wm.getColumn(i + 1).width = w; });
+        const thin = { style: 'thin' };
+        for (let c = 1; c <= 13; c++) {
+          const tc = wm.getCell(1, c); tc.border = { bottom: thin };
+          tc.font = { name: MEIBO_FONT, size: c === 1 ? 10 : 11 };
+          const hc = wm.getCell(2, c); hc.value = MEIBO_HEAD[c - 1];
+          hc.font = { name: MEIBO_FONT, size: 10, bold: c <= 11 };
+          hc.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true, wrapText: c === 8 };
+          hc.border = { left: thin, right: thin, top: thin, bottom: thin };
+        }
+        wm.getCell(2, 2).numFmt = '0_ ';
+        wm.getCell(1, 1).alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+        wm.mergeCells('A1:M1');
+        wm.getRow(1).height = 24.4; wm.getRow(2).height = 40.5;
+        const mk = (pos) => MEIBO_HEAD.map((_, c) => meiboCellStyle(pos, c));
+        st = { first: mk('first'), mid: mk('mid'), last: mk('last'), none: MEIBO_HEAD.map(() => ({})) };
+      }
+      const only = rowsOut.length === 1;
+      for (let rr = first; rr <= Math.max(tplLast, first + rowsOut.length - 1); rr++) {
+        const i = rr - first, p = rowsOut[i];
+        const s = !p ? st.none : (i === 0 && !tpl && only ? MEIBO_HEAD.map((_, c) => meiboCellStyle('only', c)) : (i === 0 ? st.first : (i === rowsOut.length - 1 ? st.last : st.mid)));
+        for (let c = 1; c <= 13; c++) { const cell = wm.getCell(rr, c); cell.value = null; cell.style = clone(s[c - 1]); }
+        if (p) {
+          wm.getRow(rr).height = rowH;
+          const vals = [p.no, p.isNew === 1 ? 1 : null, p.name, p.kana, null, p.shimei, p.gender, p.grade, p.time, p.jukuCode, p.juku, p.school, p.course];
+          vals.forEach((v, c) => { wm.getCell(rr, c + 1).value = v === '' || v === undefined ? null : v; });
+        }
+      }
+      wm.getCell(1, 1).value = title || null;
+      wm.conditionalFormattings = [];
+      if (rowsOut.length) wm.addConditionalFormatting(dupRule(`C${first}:C${first + rowsOut.length - 1}`, first));
+    }
+  }
+
+  /* ---------- 画面 ---------- */
+  const KIND = { add: '追加', update: '更新', cancel: 'キャンセル', phone: '電話', flag: '新規', warn: '要確認', info: '情報' };
+  function showErr(m) { const e = $('err'); e.hidden = !m; e.className = 'msg err'; e.textContent = m || ''; }
+  function resetResult() { current = null; $('result').hidden = true; $('outsec').hidden = true; }
+  function updateRun() { $('run').disabled = !(files1.length && buf[2] && buf[3]); }
+
+  function renderResult() {
+    const { results } = current;
+    const multi = results.length > 1;
+    $('groups').innerHTML = results.map(({ g, plan }) => {
+      const c = plan.counts;
+      const tiles = [['add', '追加', c.add], ['update', '更新', c.update], ['cancel', 'キャンセルへ', c.cancel], ['phone', '電話(残す)', c.phone], ['flag', '新規フラグ変更', c.flag], ['warn', '要確認', c.warn]];
+      return `<div class="gblock">${multi ? `<h3>${esc(g.label)}</h3>` : ''}
+        <div class="stats">${tiles.map(([k, l, n]) => `<div class="stat" data-k="${k}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('')}</div>
+        <div><h3>時間帯ごとの人数${multi ? '' : ''}</h3></div>
+        <div class="tablebox"><table><thead><tr><th>時間</th><th class="num">人数</th><th class="num">定員</th><th class="num">残り</th></tr></thead><tbody>` +
+        plan.slotStats.map((s) => `<tr><td>${esc(s.label)}</td><td class="num">${s.count}</td><td class="num">${s.cap == null ? '-' : s.cap}</td><td class="num ${s.cap != null && s.left < 0 ? 'over' : ''}">${s.cap == null ? '-' : s.left}</td></tr>`).join('') +
+        `</tbody><tfoot><tr><td><b>合計</b></td><td class="num"><b>${plan.rows.length}</b></td><td></td><td></td></tr></tfoot></table></div></div>`;
+    }).join('');
+    const all = results.flatMap((r) => r.plan.log);
+    const kinds = ['all', ...Object.keys(KIND).filter((k) => all.some((l) => l.kind === k))];
+    $('chips').innerHTML = kinds.map((k) => `<button class="chip" data-f="${k}" aria-pressed="${filter === k}">${k === 'all' ? 'すべて' : KIND[k]}</button>`).join('');
+    $('logsum').textContent = `変更一覧(${all.length}件)`;
+    const items = all.filter((l) => filter === 'all' || l.kind === filter);
+    $('log').innerHTML = items.length ? items.map((l) => `<li><span class="pill ${l.kind}">${KIND[l.kind] || l.kind}</span><span class="who">${l.date ? `<span class="gl">${esc(l.date)}</span>` : ''}${esc(l.name)}</span><span class="what">${esc(l.detail)}</span></li>`).join('') : '<li class="empty">変更はありません</li>';
+    $('result').hidden = false; $('outsec').hidden = false;
+    renderPreview();
+  }
+  const isOn = (g) => dateOn[g.key] !== false;
+  function renderDateSel() {
+    const box = $('datesel');
+    const on = $('cSort').checked || $('cMeibo').checked;
+    const multi = current && current.results.length > 1;
+    box.hidden = !(multi && on);
+    if (box.hidden) return;
+    box.innerHTML = '<h3>作る日程(チェックした日程だけ作ります)</h3>' + current.results.map(({ g }) =>
+      `<label class="check"><input type="checkbox" data-dk="${g.key}"${isOn(g) ? ' checked' : ''}><div><b>${esc(g.label)}</b></div></label>`).join('');
+  }
+  $('datesel').addEventListener('change', (e) => {
+    const i = e.target.closest('[data-dk]'); if (!i) return;
+    dateOn[i.dataset.dk] = i.checked;
+    renderPreview();
+  });
+  function renderPreview() {
+    renderDateSel();
+    const on = $('cSort').checked || $('cMeibo').checked;
+    const shown = current ? current.results.filter(({ g }) => isOn(g)) : [];
+    $('preview').hidden = !on || !current || !shown.length;
+    if (!on || !current || !shown.length) return;
+    const multi = current.results.length > 1;
+    $('preview').innerHTML = '<h3 style="margin-bottom:8px">並び順のプレビュー</h3>' + shown.map(({ g, plan }) =>
+      (multi ? `<h3 style="margin:10px 0 6px">${esc(g.label)}</h3>` : '') +
+      '<div class="tablebox"><table><thead><tr><th>№</th><th>新規</th><th>氏名</th><th>フリガナ</th><th>時間</th><th>指名</th></tr></thead><tbody>' +
+      plan.sorted.map((p) => `<tr><td>${esc(p.no)}</td><td>${p.isNew === 1 ? 1 : ''}</td><td>${esc(p.name)}</td><td>${esc(p.kana)}</td><td>${esc(p.time)}</td><td>${esc(p.shimei)}</td></tr>`).join('') + '</tbody></table></div>').join('');
+  }
+
+  /* ---------- ファイルの取り込み ---------- */
+  const readBuf = (file) => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(new Error('「' + file.name + '」を読み込めませんでした。もう一度選んでください。'));
+    r.readAsArrayBuffer(file);
+  });
+  function renderBoxes() {
+    $('n1').innerHTML = files1.length
+      ? files1.map((f, i) => `<div class="fitem"><span>${esc(f.name)}</span><button type="button" data-rm="${i}" aria-label="${esc(f.name)}を外す">×</button></div>`).join('')
+      : '<div class="fname">未選択</div>';
+    $('box1').classList.toggle('ok', files1.length > 0);
+    [2, 3].forEach((i) => { $('n' + i).textContent = fname[i] || '未選択'; $('box' + i).classList.toggle('ok', !!buf[i]); });
+    updateRun();
+  }
+  $('n1').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-rm]'); if (!b) return;
+    files1.splice(Number(b.dataset.rm), 1);
+    recomputeGroups(); renderMap(); renderBoxes(); resetResult();
+  });
+  const guessByName = (name) => {
+    if (/①/.test(name)) return 1;
+    if (/②/.test(name)) return 2;
+    if (/③/.test(name)) return 3;
+    if (/申込者/.test(name)) return 1;
+    if (/集計/.test(name)) return 2;
+    if (/参加者/.test(name)) return 3;
+    return 0;
+  };
+  async function sniff(wb) {
+    try {
+      const ws = wb.worksheets[0];
+      if (ws && headerMap(ws, (m) => m['氏名(漢字)(姓)'])) return 1;
+      if (wb.worksheets.some((s) => findHeaderRow(s))) return 2;
+      if (ws && headerMap(ws, (m) => m['姓'] && m['名'] && (m['セイ'] || m['FileMakerNo']))) return 3;
+    } catch (e) { /* 判別できない */ }
+    return 0;
+  }
+  async function assignFiles(fileList, forced) {
+    showErr('');
+    const list = Array.from(fileList || []).filter(Boolean);
+    if (!list.length) return;
+    const notes = [], seen = {};
+    for (const file of list) {
+      try {
+        if (!/\.xlsx$/i.test(file.name)) { notes.push('「' + file.name + '」はxlsx形式ではないため読み込めません。'); continue; }
+        const b = await readBuf(file);
+        let wb = null;
+        let k = forced || guessByName(file.name);
+        if (!k) { wb = await load(b); k = await sniff(wb); }
+        if (!k) { notes.push('「' + file.name + '」が①②③のどれか判別できませんでした。下の各欄から個別に選んでください。'); continue; }
+        if (k === 1) {
+          wb = wb || await load(b);
+          const apps = readApps(wb, file.name);
+          files1 = files1.filter((f) => f.name !== file.name);
+          files1.push({ name: file.name, buf: b, apps });
+        } else {
+          if (seen[k]) notes.push('①②③のうち' + '①②③'[k - 1] + 'が複数あります。「' + file.name + '」を使います。');
+          seen[k] = true;
+          buf[k] = b; fname[k] = file.name;
+          if (k === 2) { wb = wb || await load(b); info2 = classify(wb); groups.forEach((g) => { choice[g.key] = autoChoice(g); }); }
+        }
+      } catch (e) { notes.push(e && e.message ? e.message : '「' + file.name + '」を読み込めませんでした。'); }
+    }
+    recomputeGroups(); renderMap(); renderBoxes(); resetResult();
+    if (notes.length) showErr(notes.join(' '));
+  }
+  $('f1').addEventListener('change', (e) => { assignFiles(e.target.files, 1); e.target.value = ''; });
+  [2, 3].forEach((i) => $('f' + i).addEventListener('change', (e) => { assignFiles(e.target.files, i); e.target.value = ''; }));
+  [1, 2, 3].forEach((i) => {
+    const box = $('box' + i);
+    box.addEventListener('dragover', (e) => { e.preventDefault(); box.classList.add('over'); });
+    box.addEventListener('dragleave', () => box.classList.remove('over'));
+    box.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); box.classList.remove('over'); const fl = e.dataTransfer && e.dataTransfer.files; assignFiles(fl, i === 1 ? 1 : (fl && fl.length === 1 ? i : 0)); });
+  });
+  const drop = $('drop');
+  drop.addEventListener('click', () => $('fall').click());
+  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fall').click(); } });
+  $('fall').addEventListener('change', (e) => { assignFiles(e.target.files); e.target.value = ''; });
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); assignFiles(e.dataTransfer && e.dataTransfer.files); });
+  ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => e.preventDefault()));
+
+  $('run').addEventListener('click', async () => {
+    showErr(''); $('run').disabled = true; $('run').textContent = '反映中…';
+    try {
+      const { results, sheets, baseApp, baseCan } = await buildPlans();
+      current = { results, sheets, baseApp, baseCan };
+      if (!$('asof').value) { const d = new Date(); $('asof').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+      filter = 'all'; $('logbox').open = false;
+      renderResult();
+      $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) { current = null; showErr(e && e.message ? e.message : '処理中にエラーが起きました。'); }
+    $('run').textContent = '反映して変更内容を確認する'; updateRun();
+  });
+  $('chips').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (b) { filter = b.dataset.f; renderResult(); } });
+  $('cSort').addEventListener('change', renderPreview);
+  $('cMeibo').addEventListener('change', renderPreview);
+
+  $('dl').addEventListener('click', async () => {
+    const m = $('dlmsg'); m.hidden = true;
+    $('dl').disabled = true;
+    try {
+      const ctx = await buildPlans();
+      prepareSheets(ctx.w2, ctx);
+      const opts = { sort: $('cSort').checked, meibo: $('cMeibo').checked, asof: $('asof').value };
+      if ((opts.sort || opts.meibo) && !ctx.results.some((r) => isOn(r.g))) throw new Error('「作る日程」を1つ以上選んでください。');
+      for (const r of ctx.results) writeGroup(ctx.w2, r, ctx, Object.assign({}, opts, { sort: opts.sort && isOn(r.g), meibo: opts.meibo && isOn(r.g) }));
+      ctx.w2.calcProperties = Object.assign({}, ctx.w2.calcProperties, { fullCalcOnLoad: true });
+      const out = await ctx.w2.xlsx.writeBuffer();
+      const base = (fname[2] || '集計.xlsx').replace(/\.xlsx$/i, '');
+      const stamp = ($('asof').value || '').replace(/-/g, '');
+      const filename = `${base}_更新${stamp ? '_' + stamp : ''}.xlsx`;
+      let saved = false;
+      try {
+        const dls = window.claude && (await window.claude.use('downloads'));
+        if (dls) { await dls.save({ filename, data: new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }) }); saved = true; }
+      } catch (e) { if (e && e.code === 'declined') { m.hidden = false; m.className = 'msg wrn'; m.textContent = '保存を取りやめました。'; $('dl').disabled = false; return; } }
+      if (!saved) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([out])); a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      }
+      m.hidden = false; m.className = 'msg ok'; m.textContent = `「${filename}」を出力しました。`;
+    } catch (e) { m.hidden = false; m.className = 'msg err'; m.textContent = e && e.message ? e.message : '出力中にエラーが起きました。'; }
+    $('dl').disabled = false;
+  });
+})();
+
+</script>
+
+</body>
+</html>
