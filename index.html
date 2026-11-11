@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; worker-src 'self'; base-uri 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>個別相談予約名簿作成ツール</title>
 <style>
@@ -201,14 +201,14 @@
 </div>
 
 <script>
-/* 起動の保険: 読み込み失敗は画面に出す。以前のバージョンが残したキャッシュ(Service Worker)は片付ける */
+/* 起動の保険: 読み込み失敗は画面に出す */
 window.addEventListener('error', function (e) {
   try { var d = document.createElement('div'); d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99;background:#fde8e8;color:#7a1010;padding:10px 14px;font:14px sans-serif';
     d.textContent = '画面の準備中にエラーが起きました: ' + (e.message || '') + '(別のブラウザ、またはこのファイルの再取得をお試しください)'; document.body.appendChild(d); } catch (x) {}
 });
+/* GitHub Pagesなどで開いたときだけ、同じ場所に sw.js があれば端末に保存してオフラインでも開けるようにする(無ければ何もしない) */
 try {
-  if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); }).catch(function () {});
-  if (window.caches && caches.keys) caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); }).catch(function () {});
+  if (navigator.serviceWorker && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(function () {});
 } catch (x) {}
 </script>
 <script>
