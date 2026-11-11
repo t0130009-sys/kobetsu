@@ -497,9 +497,10 @@ const ExcelJS = (() => {
     getRow(r) { return new Row(this, r); }
     getColumn(c) { return new Column(this, c); }
     get rowCount() {
-      let m = 0;
-      for (const [r, el] of this.rowMap()) if (r > m && kid(el, 'c')) m = r;
-      return m;
+      // 行は番号順に並んでいるので、後ろから見て最初にセルがある行が最終行(毎回全行を見ない)
+      const ch = this.sd.children;
+      for (let i = ch.length - 1; i >= 0; i--) if (kid(ch[i], 'c')) return Number(ch[i].getAttribute('r'));
+      return 0;
     }
     get columnCount() {
       let m = 0;
@@ -914,6 +915,7 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   /* ---------- 状態 ---------- */
   const buf = { 2: null, 3: null };
+  let p3cache = null;   // ③は読むだけなので、反映時に読み直さず取り込み時の結果を使う
   const fname = { 2: '', 3: '' };
   let files1 = [];          // {name, buf, apps}
   let info2 = null;         // ②のシート一覧(種類・日付)
@@ -983,7 +985,8 @@ if (typeof module !== 'undefined') module.exports = Core;
     if (!h) throw new Error('「' + srcName + '」の見出し行(「氏名(漢字)（姓）」の列)が見つかりません。申込者一覧のExcelか確認してください。');
     const { hr, map } = h;
     let tcol = 0, best = 0;
-    for (let c = 1; c <= ws.columnCount; c++) {
+    const ncol = ws.columnCount;
+    for (let c = 1; c <= ncol; c++) {
       let n = 0;
       for (let r = hr + 1; r <= Math.min(ws.rowCount, hr + 200); r++) if (Core.isTime(cv(ws.getCell(r, c)))) n++;
       if (n > best) { best = n; tcol = c; }
@@ -1154,8 +1157,8 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   async function buildPlans() {
     if (!(files1.length && buf[2] && buf[3])) throw new Error('①②③のExcelを読み込んでください。');
-    const [w2, w3] = await Promise.all([load(buf[2]), load(buf[3])]);
-    const p3 = readParticipants(w3);
+    const w2 = await load(buf[2]);
+    const p3 = p3cache || readParticipants(await load(buf[3]));
     const sheets = classify(w2);
     const baseApp = sheets.find((s) => s.role === 'app');
     if (!baseApp) throw new Error('②に申込者シートが見つかりません(C列が「氏名」の見出しと、N列の時間表があるシートが必要です)。');
@@ -1436,7 +1439,7 @@ if (typeof module !== 'undefined') module.exports = Core;
           if (!cl.some((x) => x.role === 'app')) throw new Error('申込者シート(C列「氏名」の見出しとN列の時間表があるシート)が見つかりません。②集計のExcelではないかもしれません。');
           f.cl = cl;
         }
-        if (f.role === 3) readParticipants(await getWb(f));
+        if (f.role === 3) f.p3 = readParticipants(await getWb(f));
       } catch (e) { f.err = e && e.message ? e.message : '読み込めませんでした。'; if (f.role === 1) f.apps = null; }
     }
     files1 = loaded.filter((f) => f.role === 1 && !f.err);
@@ -1445,6 +1448,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     const f2 = one(2), f3 = one(3);
     if (f2) { buf[2] = f2.buf; fname[2] = f2.name; info2 = f2.cl; }
     if (f3) { buf[3] = f3.buf; fname[3] = f3.name; }
+    p3cache = f3 ? f3.p3 : null;
     Object.keys(choice).forEach((k) => delete choice[k]);
     recomputeGroups(); renderMap(); renderFiles(); resetResult(); updateRun();
   }
