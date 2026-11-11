@@ -201,6 +201,17 @@
 </div>
 
 <script>
+/* 起動の保険: 読み込み失敗は画面に出す。以前のバージョンが残したキャッシュ(Service Worker)は片付ける */
+window.addEventListener('error', function (e) {
+  try { var d = document.createElement('div'); d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99;background:#fde8e8;color:#7a1010;padding:10px 14px;font:14px sans-serif';
+    d.textContent = '画面の準備中にエラーが起きました: ' + (e.message || '') + '(別のブラウザ、またはこのファイルの再取得をお試しください)'; document.body.appendChild(d); } catch (x) {}
+});
+try {
+  if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); }).catch(function () {});
+  if (window.caches && caches.keys) caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); }).catch(function () {});
+} catch (x) {}
+</script>
+<script>
 
 /*!
 
